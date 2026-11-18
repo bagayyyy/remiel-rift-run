@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#100e18">
+  <meta name="description" content="雷米埃尔的无限防线。射击改变增益门和减益门，每四波迎战首领。">
+  <title>雷米埃尔 · 裂隙突围</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="render.js" defer></script>
+  <script src="game.js" defer></script>
+</head>
+<body>
+  <div class="frame">
+    <header class="mast">
+      <div class="brand"><span class="crest" aria-hidden="true">✦</span><span>裂隙突围 <small>RIFT RUN</small></span></div>
+      <div class="record"><span aria-hidden="true">◇</span> 最高分 <strong id="best">00000</strong></div>
+    </header>
+    <main class="layout">
+      <section class="mission" aria-label="战斗区">
+        <div class="mission-top">
+          <div class="sector"><span class="signal"></span> 空洞 · 隔离街区</div>
+          <span id="waveLabel" class="wave">第 01 波 · 无限模式</span>
+        </div>
+        <div class="arena" id="arena">
+          <canvas id="field" aria-label="雷米埃尔的战场。开战后可以拖动或使用左右方向键移动。"></canvas>
+          <div class="combat-hud" aria-label="战斗状态">
+            <div class="life"><small>生命</small><div class="pips" id="health" role="meter" aria-label="生命" aria-valuemin="0" aria-valuemax="5" aria-valuenow="5"><i></i><i></i><i></i><i></i><i></i></div></div>
+            <div class="score"><small>得分</small><output id="score">00000</output></div>
+          </div>
+          <div id="bossHud" class="boss-hud" hidden><strong>裂隙暴君</strong><span class="boss-meter"><i id="bossLife"></i></span><small id="bossStats"></small></div>
+          <div id="banner" class="banner" hidden></div>
+          <div id="ping" class="ping" hidden></div>
+          <div class="screen" id="screen">
+            <div class="screen-content">
+              <span class="screen-kicker" id="screenKicker">E N D L E S S &nbsp; / &nbsp; R I F T &nbsp; R U N</span>
+              <h1 id="screenTitle">裂隙突围</h1>
+              <p id="screenText">射击改变门的收益，每四波迎战首领。</p>
+              <button type="button" id="startBtn" class="start">开始突围 <span aria-hidden="true">↗</span></button>
+              <button type="button" id="restartBtn" class="restart" hidden>重新开始</button>
+            </div>
+          </div>
+        </div>
+        <div class="mission-bottom">
+          <div class="move-tip"><span class="touch-tip">拖动战场 · 自动开火</span><span class="keyboard-tip"><kbd>←</kbd><kbd>→</kbd> 移动 <b>·</b> 自动开火</span></div>
+          <div class="actions">
+            <button id="soundBtn" class="icon-btn" type="button" aria-label="开启音效" aria-pressed="false" title="开启音效"><span aria-hidden="true">♬</span></button>
+            <button id="pauseBtn" class="icon-btn" type="button" aria-label="暂停" title="暂停 / P" disabled><span aria-hidden="true">Ⅱ</span></button>
+          </div>
+        </div>
+      </section>
+      <aside class="sidebar" aria-label="角色与武器">
+        <section class="operator" aria-label="出战角色 雷米埃尔">
+          <div class="portrait" role="img" aria-label="用户提供的雷米埃尔角色图"></div>
+          <div class="operator-caption">
+            <span class="operator-role"><i></i> 出战角色</span>
+            <h2>雷米埃尔</h2>
+            <span class="operator-en">REMIEL</span>
+          </div>
+        </section>
+        <section class="arsenal" aria-labelledby="arsenal-title">
+          <header class="arsenal-head"><h2 id="arsenal-title">武器系统</h2><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 切换</span></header>
+          <div class="guns" role="group" aria-label="切换武器">
+            <button type="button" class="gun" data-gun="0" aria-pressed="true"><canvas class="gun-icon" width="110" height="60" aria-hidden="true"></canvas><span class="gun-text"><strong>羽芒</strong><small>连发步枪</small></span><span class="gun-key">01</span></button>
+            <button type="button" class="gun" data-gun="1" aria-pressed="false"><canvas class="gun-icon" width="110" height="60" aria-hidden="true"></canvas><span class="gun-text"><strong>星散</strong><small>广角霰弹</small></span><span class="gun-key">02</span></button>
+            <button type="button" class="gun" data-gun="2" aria-pressed="false"><canvas class="gun-icon" width="110" height="60" aria-hidden="true"></canvas><span class="gun-text"><strong>破晓</strong><small>穿甲轨道炮</small></span><span class="gun-key">03</span></button>
+          </div>
+          <dl class="loadout" aria-label="当前武器属性">
+            <div><dt>基础单发</dt><dd><span id="attackStat">2</span> <small id="attackTier" aria-label="攻击等级">Lv 0</small></dd></div>
+            <div><dt>弹道数</dt><dd id="laneStat">1</dd></div>
+            <div><dt>射速增益</dt><dd id="cadenceStat">+0%</dd></div>
+          </dl>
+        </section>
+        <section class="brief" aria-label="玩法说明">
+          <div class="rule"><span class="rule-icon good">+</span><span>强化门提升属性。攻击成长递减，追加弹道为半伤害</span></div>
+          <div class="rule"><span class="rule-icon bad">−</span><span>红门降低属性，等级不足时另扣 1 点生命</span></div>
+          <div class="rule"><span class="rule-icon charge">↟</span><span>充能到 4 / 8 格，各增强增益或削弱减益一级</span></div>
+          <div class="rule"><span class="rule-icon bad">!</span><span>漏小怪扣 1 点生命，漏重装或首领直接失败</span></div>
+          <div class="rule"><span class="rule-icon crate">+</span><span>击碎补给箱或击败首领，恢复 1 点生命</span></div>
+        </section>
+      </aside>
+    </main>
+    <footer class="foot"><span id="farthest"></span><span class="live-indicator"><i></i> <span id="status">待命</span></span></footer>
+    <div class="sr-only" id="announcement" role="status"></div>
+  </div>
+</body>
+</html>
