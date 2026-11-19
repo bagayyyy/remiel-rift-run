@@ -343,9 +343,11 @@ class ArenaRenderer {
     ctx.fillRect(19, -36, 5, 31);
     ctx.fillStyle = "#ffca91";
     ctx.textAlign = "center";
-    ctx.font = "800 12px ui-monospace, monospace";
-    ctx.fillText("+", 0, -49);
+    ctx.font = "800 15px sans-serif";
+    ctx.fillStyle = "#ffabd3";
+    ctx.fillText("✦", 0, -49);
     ctx.font = "900 18px ui-monospace, monospace";
+    ctx.fillStyle = "#ffca91";
     ctx.fillText(item.hp, 0, -13);
     ctx.restore();
   }
@@ -514,6 +516,72 @@ class ArenaRenderer {
     ctx.restore();
   }
 
+  drawJinghong(ctx, game) {
+    const cast = game.skillCast;
+    const age = game.elapsed - cast.started;
+    const [x, y, scale] = this.point(game.x, playerDepth);
+    ctx.save();
+    if (age < .46) {
+      const sweep = age / .46;
+      const z = playerDepth + (1 - playerDepth) * sweep;
+      const [left, waveY] = this.point(-1.04, z);
+      const [right] = this.point(1.04, z);
+      const [origin] = this.point(cast.originX * (1 - sweep), z);
+      const lift = 24 + 62 * sweep;
+      ctx.globalAlpha = (1 - sweep) * .85;
+      ctx.beginPath();
+      ctx.moveTo(left, waveY);
+      ctx.quadraticCurveTo(origin, waveY - lift, right, waveY);
+      ctx.strokeStyle = jinghong.color;
+      ctx.shadowColor = jinghong.color;
+      ctx.shadowBlur = 17;
+      ctx.lineWidth = 5 - 2 * sweep;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = Math.min(.8, (game.skillUntil - game.elapsed) * 7);
+    ctx.beginPath();
+    ctx.ellipse(x, y - 37 * scale, 54 * scale, 52 * scale, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "#ff86c51a";
+    ctx.fill();
+    ctx.strokeStyle = "#ffc2e4";
+    ctx.shadowColor = jinghong.color;
+    ctx.shadowBlur = 12;
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawDamageNumbers(ctx, game) {
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = jinghong.color;
+    ctx.strokeStyle = "#29142b";
+    ctx.lineWidth = 3.5;
+    ctx.lineJoin = "round";
+    for (const number of game.damageNumbers) {
+      const age = (game.elapsed - number.created) / jinghong.damageTextDuration;
+      const [x, y, s] = this.point(number.x, number.z);
+      const lift = number.type === "boss" ? 84 : number.type === "armored" ? 62 : 44;
+      const textY = Math.max(22, y - s * lift - 31 * age);
+      const size = Math.max(15, Math.round(s * 21));
+      ctx.globalAlpha = Math.min(1, (1 - age) * 3);
+      ctx.font = "900 " + size + "px ui-monospace, monospace";
+      const label = String(number.damage);
+      const width = ctx.measureText(label).width;
+      const spacing = width + 7;
+      const middle = (number.hits - 1) / 2;
+      const margin = width / 2 + middle * spacing + 4;
+      const center = Math.max(margin, Math.min(this.w - margin, x));
+      for (let hit = 0; hit < number.hits; hit++) {
+        const textX = center + (hit - middle) * spacing;
+        ctx.strokeText(label, textX, textY);
+        ctx.fillText(label, textX, textY);
+      }
+    }
+    ctx.restore();
+  }
+
   draw(game, time, gun) {
     const { ctx, w, h, dpr } = this;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -526,11 +594,11 @@ class ArenaRenderer {
     items.push({ type: "player", z: .067 });
     items.sort((a, b) => b.z - a.z);
     for (const item of items) {
-      if (item.z > 1 || item.z < -.11) continue;
+      if (item.dead || item.z > 1 || item.z < -.11) continue;
       if (item.type === "gate") this.gate(ctx, item, time);
       else if (item.type === "crate") this.crate(ctx, item);
       else if (item.type === "player") this.player(ctx, game, time, gun);
-      else this.enemy(ctx, item, time);
+      else this.enemy(ctx, item, item.type === "boss" ? item.age : game.mode === "ready" ? time : game.enemyTime);
     }
     for (const bolt of game.bolts) this.projectile(ctx, bolt, true);
     for (const p of game.particles) {
@@ -539,6 +607,7 @@ class ArenaRenderer {
       this.ellipse(ctx, x, y - p.life * 23 * s, p.size * s, p.size * .65 * s, p.tint);
     }
     ctx.globalAlpha = 1;
+    if (game.skillCast) this.drawJinghong(ctx, game);
     if (game.flash > 0) {
       const damage = ctx.createRadialGradient(w / 2, h / 2, h * .22, w / 2, h / 2, Math.max(w, h) * .64);
       damage.addColorStop(0, "#ff174d00");
@@ -548,6 +617,7 @@ class ArenaRenderer {
       ctx.fillRect(0, 0, w, h);
       ctx.globalAlpha = 1;
     }
+    if (game.damageNumbers.length) this.drawDamageNumbers(ctx, game);
   }
 
   drawWeaponCard(canvas, gun) {

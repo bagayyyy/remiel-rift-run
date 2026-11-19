@@ -13,6 +13,7 @@ const finishDepth = .043;
 const bossEvery = 4;
 const gateChargeMax = 8;
 const cadenceStep = 8;
+const jinghong = { maxCharge: 3, stopPerCharge: .8, bossStopLimit: 1.5, damageTextDuration: .85, color: "#ff86c5" };
 const upgrades = {
   attack: { title: "攻击", cap: Infinity, color: "#ffacd4", pale: "#ffe4f4" },
   lanes: { title: "弹道", cap: 4, color: "#80e7fb", pale: "#e0fdff" },
@@ -48,14 +49,14 @@ let soundOn = remembered("sound", "off") === "on";
 
 function fresh(mode) {
   return {
-    mode, x: 0, targetX: 0, elapsed: 0, wave: 0, inWave: 0,
+    mode, x: 0, targetX: 0, elapsed: 0, enemyTime: 0, wave: 0, inWave: 0,
     health: 5, levels: { attack: 0, lanes: 0, cadence: 0 }, score: 0,
     invulnerable: 0, kick: 0, flash: 0, lossReason: "防线失守",
     fireIn: .08, gateIn: .65, crateIn: 9.2,
     formation: 0, formations: opening, gateCount: 0, nextWaveIn: null,
     actors: [], shots: [], bolts: [], particles: [],
     banner: "", bannerUntil: 0, ping: "", pingUntil: 0, pingTone: "",
-    boss: null
+    boss: null, skillPoints: 0, skillUntil: 0, skillCast: null, damageNumbers: []
   };
 }
 let game = fresh("ready");
@@ -63,10 +64,22 @@ let game = fresh("ready");
 function formatScore(score) {
   return String(score).padStart(5, "0");
 }
-function weaponDamage(gun = weapons[selected]) {
+function attackBonus() {
   const level = game.levels.attack;
-  const bonus = level <= 5 ? level : 5 + Math.floor(8 * (Math.sqrt(1 + (level - 5) / 6) - 1));
-  return gun.damage + bonus;
+  return level <= 5 ? level : 5 + Math.floor(8 * (Math.sqrt(1 + (level - 5) / 6) - 1));
+}
+function weaponDamage(gun = weapons[selected]) {
+  return gun.damage + attackBonus();
+}
+function syncSkill() {
+  const button = $("skillBtn");
+  const active = game.elapsed < game.skillUntil;
+  button.disabled = game.mode !== "playing" || active || game.skillPoints === 0;
+  button.dataset.state = active ? "casting" : button.disabled ? "waiting" : "ready";
+  $("arena").dataset.skillActive = active;
+  const charge = game.skillPoints + "/" + jinghong.maxCharge;
+  button.setAttribute("aria-label", "惊鸿，储能 " + charge + (active ? "，时停中" : ""));
+  $("skillPoints").textContent = charge;
 }
 function syncLoadout() {
   const gun = weapons[selected];
@@ -103,9 +116,9 @@ function score(points) {
 function announce(message) {
   $("announcement").textContent = message;
 }
-function notice(message, danger = false) {
+function notice(message, danger = false, duration = 1.05) {
   game.ping = message;
-  game.pingUntil = game.elapsed + 1.05;
+  game.pingUntil = game.elapsed + duration;
   game.pingTone = danger ? "danger" : "";
   announce(message);
 }
@@ -141,7 +154,8 @@ const sounds = {
   fire: [320, 115, .056, .018, "triangle"], hit: [165, 74, .2, .065, "sawtooth"],
   crystal: [680, 1190, .12, .05, "triangle"], gate: [420, 930, .22, .06, "sine"],
   start: [296, 590, .22, .06, "triangle"], select: [490, 640, .08, .04, "sine"],
-  boss: [145, 65, .45, .06, "triangle"], finish: [310, 1030, .58, .08, "triangle"]
+  boss: [145, 65, .45, .06, "triangle"], finish: [310, 1030, .58, .08, "triangle"],
+  skill: [460, 1640, .42, .065, "sine"]
 };
 function play(name) {
   if (!soundOn || audio?.state !== "running") return;
@@ -174,6 +188,7 @@ function setScreen(mode) {
   $("pauseBtn").title = mode === "paused" ? "继续 / P" : "暂停 / P";
   $("pauseBtn").setAttribute("aria-label", mode === "paused" ? "继续" : "暂停");
   $("status").textContent = screen ? screen[4] : "作战中";
+  syncSkill();
   if (screen) {
     $("screenKicker").textContent = screen[0];
     $("screenTitle").textContent = screen[1];
@@ -211,7 +226,11 @@ function lose(reason) {
   setScreen("lost");
   announce(reason);
 }
-function hurt(amount, reason) {
+function hurt(amount, reason, hitAt = game.elapsed) {
+  if (hitAt < game.skillUntil) {
+    notice(reason + " · 无敌抵挡");
+    return;
+  }
   game.health = Math.max(0, game.health - amount);
   game.invulnerable = .8;
   game.flash = 1;
@@ -321,7 +340,7 @@ function spawnBoss() {
   showBanner("第 " + (game.wave + 1) + " 波 · 裂隙暴君");
   play("boss");
 }
-function updateSpawns(dt) {
+function updateThreatSpawns(dt) {
   game.inWave += dt;
   const formation = !bossWave() || game.boss ? game.formations[game.formation] : null;
   if (formation && game.inWave >= formation[0]) {
@@ -333,6 +352,9 @@ function updateSpawns(dt) {
     game.nextWaveIn -= dt;
     if (game.nextWaveIn <= 0) beginWave(game.wave + 1);
   }
+}
+function updateSpawns(dt, enemyDt = dt) {
+  if (enemyDt > 0) updateThreatSpawns(enemyDt);
   game.crateIn -= dt;
   if (game.crateIn <= 0) {
     spawnCrate();
@@ -387,12 +409,12 @@ function destroy(target) {
     return;
   }
   if (target.type === "crate") {
-    if (game.health < 5) {
-      game.health++;
-      notice("补给回收 · 生命 +1");
-    } else {
-      notice("补给回收 · 生命已满");
-    }
+    const healed = game.health < 5;
+    if (healed) game.health++;
+    const earnedCharge = game.skillPoints < jinghong.maxCharge;
+    if (earnedCharge) game.skillPoints++;
+    syncSkill();
+    notice((earnedCharge ? "储能 +1" : "储能已满") + (healed ? " · 生命 +1" : ""));
     burst(target.x, target.z, "#ffc582", 14);
     score(45);
     play("gate");
@@ -401,6 +423,38 @@ function destroy(target) {
   burst(target.x, target.z, "#bbb4ff", target.type === "armored" ? 15 : 9);
   score(target.type === "armored" ? 155 : target.type === "runner" ? 95 : 75);
   play("crystal");
+}
+function damageTarget(target, amount) {
+  target.hp -= amount;
+  target.hit = .085;
+  if (target.hp <= 0) destroy(target);
+  else if (target.type === "boss") syncBoss();
+}
+function castJinghong() {
+  if (game.mode !== "playing" || game.skillPoints === 0 || game.elapsed < game.skillUntil) return;
+  const hits = game.skillPoints;
+  const duration = hits * jinghong.stopPerCharge;
+  const oldDamage = 18 + 4 * attackBonus() + Math.round(game.wave * 2.8);
+  const damage = Math.round(oldDamage * hits / jinghong.maxCharge);
+  game.skillPoints = 0;
+  game.skillUntil = game.elapsed + duration;
+  game.skillCast = {
+    started: game.elapsed, originX: game.x,
+    bossUntil: game.elapsed + Math.min(duration, jinghong.bossStopLimit)
+  };
+  const targets = game.actors.filter((item) => !item.dead && isThreat(item));
+  if (game.boss) targets.push(game.boss);
+  for (const target of targets) {
+    const z = Math.min(1, target.z);
+    game.damageNumbers.push({
+      x: target.x, z, type: target.type, damage, hits, created: game.elapsed
+    });
+    burst(target.x, z, jinghong.color, 8);
+    damageTarget(target, damage * hits);
+  }
+  syncSkill();
+  notice("惊鸿 · 时停 " + duration.toFixed(1) + " 秒", false, duration);
+  play("skill");
 }
 function updateShots(dt) {
   const targets = game.actors.filter((a) => !a.used && !a.dead);
@@ -430,23 +484,21 @@ function updateShots(dt) {
         continue;
       }
       shot.hitIds.add(target.id);
-      target.hp -= Math.max(1, shot.damage - (shot.beam ? 0 : target.armor ?? 0));
-      target.hit = .085;
-      if (target.hp <= 0) destroy(target);
-      else if (target.type === "boss") syncBoss();
+      damageTarget(target, Math.max(1, shot.damage - (shot.beam ? 0 : target.armor ?? 0)));
       if (--shot.remaining <= 0) break;
     }
   }
   game.shots = game.shots.filter((s) => s.remaining > 0 && s.z < 1.12 && Math.abs(s.x) < 1.22);
 }
-function moveActors(dt) {
+function moveActors(dt, enemyDt = dt) {
   for (const item of game.actors) {
+    const hostile = isThreat(item);
     item.prevZ = item.z;
-    item.z -= item.speed * dt;
+    item.z -= item.speed * (hostile ? enemyDt : dt);
     item.hit = Math.max(0, item.hit - dt);
-    if (isThreat(item)) {
+    if (hostile && enemyDt > 0) {
       const runner = item.type === "runner";
-      item.x = item.baseX + (runner ? .079 : .039) * Math.sin(game.elapsed * (runner ? 5 : 3.5) + item.phase);
+      item.x = item.baseX + (runner ? .079 : .039) * Math.sin(game.enemyTime * (runner ? 5 : 3.5) + item.phase);
     }
   }
 }
@@ -498,17 +550,18 @@ function resolveFinish() {
     lose(breached);
   } else if (leaks) hurt(leaks, "小型以骸突破防线");
 }
-function moveBoss(dt) {
+function moveBoss(dt, bossDt) {
   const boss = game.boss;
   if (!boss) return;
-  boss.age += dt;
   boss.hit = Math.max(0, boss.hit - dt);
   boss.prevZ = boss.z;
-  boss.z -= boss.speed * dt;
+  if (bossDt <= 0) return;
+  boss.age += bossDt;
+  boss.z -= boss.speed * bossDt;
   boss.x = Math.sin(boss.age * (.83 + Math.min(.28, boss.tier * .052))) * .53 + Math.sin(boss.age * 2.1) * .081;
   syncBoss();
   if (boss.z > .90 || boss.z < .17) return;
-  boss.fireIn -= dt;
+  boss.fireIn -= bossDt;
   if (boss.fireIn > 0) return;
   const rage = boss.hp < boss.maxHp * .45;
   const speed = (rage ? .44 : .36) + Math.min(.09, boss.tier * .012);
@@ -527,7 +580,10 @@ function moveBolts(dt) {
     if (before >= playerDepth && bolt.z < playerDepth && Math.abs(bolt.x - game.x) < .13) {
       bolt.dead = true;
       burst(game.x, playerDepth, "#ff9bce", 8);
-      if (game.invulnerable <= 0) hurt(1, "被首领弹幕击中");
+      if (game.invulnerable <= 0) {
+        const hitAt = game.elapsed - dt * (playerDepth - bolt.z) / (before - bolt.z);
+        hurt(1, "被首领弹幕击中", hitAt);
+      }
       if (game.mode !== "playing") break;
     }
   }
@@ -542,16 +598,28 @@ function moveParticles(dt) {
   game.particles = game.particles.filter((p) => p.life > 0);
 }
 function update(dt) {
+  const previous = game.elapsed;
   game.elapsed += dt;
+  const enemyDt = previous >= game.skillUntil ? dt : Math.max(0, game.elapsed - game.skillUntil);
+  const bossUntil = game.skillCast?.bossUntil ?? 0;
+  const bossDt = previous >= bossUntil ? dt : Math.max(0, game.elapsed - bossUntil);
+  if (game.skillCast && game.elapsed >= game.skillUntil) {
+    game.skillCast = null;
+    syncSkill();
+  }
+  game.enemyTime += enemyDt;
+  if (game.damageNumbers.length) {
+    game.damageNumbers = game.damageNumbers.filter((number) => game.elapsed - number.created < jinghong.damageTextDuration);
+  }
   game.kick = Math.max(0, game.kick - dt);
   game.invulnerable = Math.max(0, game.invulnerable - dt);
   game.flash = Math.max(0, game.flash - dt * 5);
   const move = Number(keys.has("ArrowRight") || keys.has("d")) - Number(keys.has("ArrowLeft") || keys.has("a"));
   if (move) game.targetX = Math.max(-.93, Math.min(.93, game.targetX + move * dt * 1.85));
   game.x += (game.targetX - game.x) * Math.min(1, dt * 14);
-  updateSpawns(dt);
-  moveActors(dt);
-  moveBoss(dt);
+  updateSpawns(dt, enemyDt);
+  moveActors(dt, enemyDt);
+  moveBoss(dt, bossDt);
   game.fireIn -= dt;
   if (game.fireIn <= 0) {
     fire();
@@ -588,6 +656,7 @@ function frame(time) {
 $("startBtn").addEventListener("click", () => game.mode === "paused" ? pause() : start());
 $("restartBtn").addEventListener("click", start);
 $("pauseBtn").addEventListener("click", pause);
+$("skillBtn").addEventListener("click", castJinghong);
 $("soundBtn").addEventListener("click", () => {
   soundOn = !soundOn;
   remember("sound", soundOn ? "on" : "off");
@@ -602,6 +671,11 @@ gunButtons.forEach((button, i) => {
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (key === " " && game.mode === "playing" && !e.target?.closest?.("button, input, textarea, select, [contenteditable]")) {
+    e.preventDefault();
+    if (!e.repeat) castJinghong();
+    return;
+  }
   if (["ArrowLeft", "ArrowRight", "a", "d"].includes(key) && game.mode === "playing") {
     e.preventDefault();
     keys.add(key);

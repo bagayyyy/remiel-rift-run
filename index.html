@@ -44,6 +44,7 @@
         <div class="mission-bottom">
           <div class="move-tip"><span class="touch-tip">拖动战场 · 自动开火</span><span class="keyboard-tip"><kbd>←</kbd><kbd>→</kbd> 移动 <b>·</b> 自动开火</span></div>
           <div class="actions">
+            <button id="skillBtn" class="skill-btn" type="button" aria-label="惊鸿，储能 0/3" aria-keyshortcuts="Space" aria-describedby="skillRule" data-state="waiting" disabled><span class="skill-mark" aria-hidden="true">✦</span><strong>惊鸿</strong><span id="skillPoints" class="skill-points" aria-hidden="true">0/3</span><kbd>空格</kbd></button>
             <button id="soundBtn" class="icon-btn" type="button" aria-label="开启音效" aria-pressed="false" title="开启音效"><span aria-hidden="true">♬</span></button>
             <button id="pauseBtn" class="icon-btn" type="button" aria-label="暂停" title="暂停 / P" disabled><span aria-hidden="true">Ⅱ</span></button>
           </div>
@@ -77,6 +78,7 @@
           <div class="rule"><span class="rule-icon charge">↟</span><span>充能到 4 / 8 格，各增强增益或削弱减益一级</span></div>
           <div class="rule"><span class="rule-icon bad">!</span><span>漏小怪扣 1 点生命，漏重装或首领直接失败</span></div>
           <div class="rule"><span class="rule-icon crate">+</span><span>击碎补给箱或击败首领，恢复 1 点生命</span></div>
+          <div class="rule"><span class="rule-icon skill-mark">✦</span><span id="skillRule">击碎补给箱攒储能，上限 3 点。惊鸿一次结算所有伤害，每点提供 0.8 秒时停。时停期间角色无敌，首领最多停 1.5 秒。</span></div>
         </section>
       </aside>
     </main>
